@@ -3,22 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Socket.IO Chat</title>
+    <title>NotiChat - Chat em Tempo Real</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Chat Socket.IO</h1>
-        
-        <div id="messages" class="messages"></div>
-        
-        <form id="messageForm" class="message-form">
-            <input type="text" id="messageInput" placeholder="Digite sua mensagem..." autocomplete="off">
-            <button type="submit">Enviar</button>
-        </form>
+    <!-- Partículas de fundo -->
+    <div class="particles">
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <!-- Tela de Login -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <div class="logo-section">
+                <div class="logo">
+                    <i class="fas fa-comments"></i>
+                </div>
+                <h1>NotiChat</h1>
+                <p>Conecte-se e converse em tempo real</p>
+            </div>
+            
+            <form id="loginForm" class="login-form">
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="usernameInput" placeholder="Digite seu nome" required>
+                </div>
+                <button type="submit" class="login-btn">
+                    <span>Entrar no Chat</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+            
+            <div class="features">
+                <div class="feature">
+                    <i class="fas fa-bolt"></i>
+                    <span>Mensagens instantâneas</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-users"></i>
+                    <span>Usuários online</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-mobile-alt"></i>
+                    <span>Interface responsiva</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tela do Chat -->
+    <div id="chatScreen" class="chat-screen hidden">
+        <div class="chat-container">
+            <!-- Header do Chat -->
+            <div class="chat-header">
+                <div class="header-left">
+                    <div class="logo-mini">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <div class="chat-info">
+                        <h2>NotiChat</h2>
+                        <span id="connectionStatus" class="status">Conectando...</span>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="online-count">
+                        <i class="fas fa-circle online-indicator"></i>
+                        <span id="onlineCount">0</span> online
+                    </div>
+                    <button id="userMenuBtn" class="user-menu-btn">
+                        <i class="fas fa-user-circle"></i>
+                        <span id="currentUsername"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sidebar de usuários (opcional, pode ser colapsada) -->
+            <div id="usersSidebar" class="users-sidebar hidden">
+                <div class="sidebar-header">
+                    <h3><i class="fas fa-users"></i> Usuários Online</h3>
+                    <button id="closeSidebar" class="close-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="usersList" class="users-list">
+                    <!-- Lista de usuários será preenchida dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Área principal do chat -->
+            <div class="chat-main">
+                <!-- Área de mensagens -->
+                <div id="messages" class="messages">
+                    <div class="welcome-message">
+                        <div class="welcome-icon">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <h3>Bem-vindo ao NotiChat!</h3>
+                        <p>Comece uma conversa digitando uma mensagem abaixo.</p>
+                    </div>
+                </div>
+
+                <!-- Indicador de digitação -->
+                <div id="typingIndicator" class="typing-indicator hidden">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span id="typingText">Alguém está digitando...</span>
+                </div>
+
+                <!-- Formulário de mensagem -->
+                <div class="message-input-container">
+                    <form id="messageForm" class="message-form">
+                        <div class="input-wrapper">
+                            <button type="button" id="emojiBtn" class="emoji-btn">
+                                <i class="fas fa-smile"></i>
+                            </button>
+                            <input type="text" id="messageInput" placeholder="Digite sua mensagem..." autocomplete="off">
+                            <button type="button" id="attachBtn" class="attach-btn">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <button type="submit" id="sendBtn" class="send-btn">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast de notificações -->
+    <div id="toast" class="toast hidden">
+        <div class="toast-content">
+            <i class="toast-icon"></i>
+            <span class="toast-message"></span>
+        </div>
+    </div>
+
+    <!-- Menu dropdown do usuário -->
+    <div id="userDropdown" class="dropdown hidden">
+        <div class="dropdown-item" id="toggleUsers">
+            <i class="fas fa-users"></i>
+            <span>Ver usuários online</span>
+        </div>
+        <div class="dropdown-item" id="toggleTheme">
+            <i class="fas fa-moon"></i>
+            <span>Modo escuro</span>
+        </div>
+        <div class="dropdown-item" id="logoutBtn">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Sair</span>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>

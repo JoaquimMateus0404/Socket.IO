@@ -25,6 +25,8 @@ let connectedUsers = new Map();
 let userToClientMap = new Map();
 // Map para associar clientId com userId do sistema
 let clientToUserMap = new Map();
+// Map para controlar throttle de digitação
+let typingThrottle = new Map();
 
 // Função para broadcast para todos os clientes
 function broadcast(data, excludeWs = null) {
@@ -135,11 +137,30 @@ wss.on('connection', (ws) => {
 
 // Handlers adaptados para o NotiChat
 function handleUserConnect(ws, message) {
+  const userId = message.data?.userId || message.userId;
+  const username = message.data?.username || message.username;
+  const name = message.data?.name || message.name;
+  
+  // Verificar se o usuário já está conectado
+  const existingClientId = userToClientMap.get(userId);
+  if (existingClientId) {
+    // Encontrar e desconectar a conexão anterior
+    const existingWs = Array.from(wss.clients).find(client => client.clientId === existingClientId);
+    if (existingWs && existingWs !== ws) {
+      console.log(`Desconectando sessão anterior do usuário ${username} (${existingClientId})`);
+      existingWs.close();
+      // Limpar dados da sessão anterior
+      connectedUsers.delete(existingClientId);
+      userToClientMap.delete(userId);
+      clientToUserMap.delete(existingClientId);
+    }
+  }
+  
   const userData = {
     clientId: ws.clientId,
-    userId: message.data?.userId || message.userId,
-    username: message.data?.username || message.username,
-    name: message.data?.name || message.name,
+    userId: userId,
+    username: username,
+    name: name,
     joinTime: new Date()
   };
   
@@ -191,20 +212,28 @@ function handleChatMessage(ws, message) {
   
   const conversationId = message.conversationId;
   const messageData = message.data || message;
+  const messageContent = messageData.content || message.message;
+  
+  // Verificar se há participantes específicos da conversa
+  const participants = message.participants || [];
+  
+  console.log(`Mensagem de ${user.username}: ${messageContent} na conversa ${conversationId}`);
+  console.log(`Participantes:`, participants);
   
   // Estrutura de resposta compatível com o frontend do NotiChat
   const responseData = {
     type: 'new_message',
     id: messageData._id || Date.now() + Math.random(),
     username: user.username,
-    message: messageData.content || message.message,
+    message: messageContent,
     timestamp: new Date().toLocaleTimeString('pt-BR'),
     userId: user.userId,
+    conversationId: conversationId,
     data: {
       conversationId: conversationId,
       attachments: messageData.attachments || [],
       _id: messageData._id || Date.now() + Math.random(),
-      content: messageData.content || message.message,
+      content: messageContent,
       sender: {
         _id: user.userId,
         name: user.name,
@@ -215,10 +244,28 @@ function handleChatMessage(ws, message) {
     }
   };
   
-  // Broadcast para todos os usuários (pode ser filtrado por conversa no futuro)
-  broadcast(responseData);
-  
-  console.log(`Mensagem de ${user.username}: ${messageData.content || message.message} na conversa ${conversationId}`);
+  // Se há participantes específicos, enviar apenas para eles
+  if (participants && participants.length > 0) {
+    // Enviar para cada participante específico
+    participants.forEach(participantId => {
+      const participantClientId = userToClientMap.get(participantId);
+      if (participantClientId) {
+        const participantWs = Array.from(wss.clients).find(client => 
+          client.clientId === participantClientId && client.readyState === WebSocket.OPEN
+        );
+        if (participantWs) {
+          sendToClient(participantWs, responseData);
+          console.log(`Mensagem enviada para participante: ${participantId}`);
+        }
+      }
+    });
+    
+    // Também enviar para o remetente (apenas uma vez)
+    sendToClient(ws, responseData);
+  } else {
+    // Se não há participantes específicos, broadcast para todos
+    broadcast(responseData);
+  }
 }
 
 function handleTypingStart(ws, message) {
@@ -226,6 +273,18 @@ function handleTypingStart(ws, message) {
   if (!user) return;
   
   const conversationId = message.conversationId;
+  const throttleKey = `${user.userId}_${conversationId}`;
+  const now = Date.now();
+  
+  // Throttle de 1 segundo para evitar spam
+  if (typingThrottle.has(throttleKey)) {
+    const lastTime = typingThrottle.get(throttleKey);
+    if (now - lastTime < 1000) {
+      return; // Ignorar se foi enviado há menos de 1 segundo
+    }
+  }
+  
+  typingThrottle.set(throttleKey, now);
   
   broadcast({
     type: 'user_typing',
@@ -248,6 +307,10 @@ function handleTypingStop(ws, message) {
   if (!user) return;
   
   const conversationId = message.conversationId;
+  const throttleKey = `${user.userId}_${conversationId}`;
+  
+  // Remover do throttle
+  typingThrottle.delete(throttleKey);
   
   broadcast({
     type: 'user_typing',
@@ -336,6 +399,10 @@ function handleDisconnection(ws) {
   const user = connectedUsers.get(ws.clientId);
   
   if (user) {
+    // Limpar throttle de digitação
+    const keysToDelete = Array.from(typingThrottle.keys()).filter(key => key.startsWith(user.userId));
+    keysToDelete.forEach(key => typingThrottle.delete(key));
+    
     // Remover dos mapas
     if (user.userId) {
       userToClientMap.delete(user.userId);
@@ -393,6 +460,24 @@ app.get('/users', (req, res) => {
   res.json(users);
 });
 
+// Endpoint para debug de conexões
+app.get('/debug', (req, res) => {
+  const connections = Array.from(wss.clients).map(client => ({
+    clientId: client.clientId,
+    readyState: client.readyState,
+    userData: connectedUsers.get(client.clientId)
+  }));
+  
+  res.json({
+    totalConnections: wss.clients.size,
+    totalUsers: connectedUsers.size,
+    userToClientMappings: Object.fromEntries(userToClientMap),
+    clientToUserMappings: Object.fromEntries(clientToUserMap),
+    connections: connections,
+    typingThrottleKeys: Array.from(typingThrottle.keys())
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
@@ -400,6 +485,7 @@ server.listen(PORT, () => {
   console.log(`📱 Endpoint WebSocket: ws://localhost:${PORT}/ws`);
   console.log(`📊 Status: http://localhost:${PORT}/status`);
   console.log(`👥 Usuários: http://localhost:${PORT}/users`);
+  console.log(`🔧 Debug: http://localhost:${PORT}/debug`);
 });
 
 // Graceful shutdown
