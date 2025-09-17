@@ -25,7 +25,24 @@ const usersList = document.getElementById('usersList');
 const toast = document.getElementById('toast');
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 Aplicação carregada');
+    console.log('📍 URL atual:', window.location.href);
+    console.log('🌐 Hostname:', window.location.hostname);
+    console.log('🔒 Protocol:', window.location.protocol);
+    
+    // Testar conectividade com o servidor
+    try {
+        const serverStatus = await testServerConnection();
+        if (serverStatus) {
+            console.log('✅ Servidor está online e acessível');
+        } else {
+            console.warn('⚠️ Servidor não está respondendo adequadamente');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao verificar status do servidor:', error);
+    }
+    
     // Login form
     loginForm.addEventListener('submit', handleLogin);
     
@@ -70,26 +87,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Funções de conexão WebSocket
 function connectWebSocket() {
-  // Detectar se estamos em produção ou desenvolvimento
-  const isProduction = window.location.hostname !== 'localhost';
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  
-  let wsUrl;
-  if (isProduction) {
-    // Em produção (Render)
-    wsUrl = 'wss://socket-io-qhs6.onrender.com/ws';
-  } else {
-    // Em desenvolvimento local
-    wsUrl = `${protocol}//${window.location.host}/ws`;
-  }
-  
-  console.log('Conectando ao WebSocket:', wsUrl);
-  
-  try {
-    ws = new WebSocket(wsUrl);
+    // Detectar se estamos em produção ou desenvolvimento
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    let wsUrl;
+    if (isLocalhost) {
+        // Em desenvolvimento local
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${window.location.host}/ws`;
+    } else {
+        // Em produção (sempre usar wss para HTTPS)
+        wsUrl = `wss://${window.location.host}/ws`;
+    }
+    
+    console.log('Tentando conectar ao WebSocket:', wsUrl);
+    console.log('Hostname:', window.location.hostname);
+    console.log('Protocol:', window.location.protocol);
+    console.log('Host:', window.location.host);
+    
+    try {
+        ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
-            console.log('Conectado ao WebSocket');
+            console.log('✅ Conectado ao WebSocket com sucesso');
             isConnected = true;
             updateConnectionStatus('Conectado', 'success');
         };
@@ -103,27 +123,32 @@ function connectWebSocket() {
             }
         };
         
-        ws.onclose = () => {
-            console.log('Desconectado do WebSocket');
+        ws.onclose = (event) => {
+            console.log('❌ WebSocket desconectado:', event.code, event.reason);
             isConnected = false;
             updateConnectionStatus('Desconectado', 'error');
-            showToast('Conexão perdida. Tentando reconectar...', 'error');
             
-            // Tentar reconectar após 3 segundos
-            setTimeout(() => {
-                if (!isConnected) {
-                    connectWebSocket();
-                }
-            }, 3000);
+            // Não mostrar toast de reconexão se foi logout intencional
+            if (currentUser) {
+                showToast('Conexão perdida. Tentando reconectar...', 'error');
+                
+                // Tentar reconectar após 3 segundos
+                setTimeout(() => {
+                    if (!isConnected && currentUser) {
+                        console.log('🔄 Tentando reconectar...');
+                        connectWebSocket();
+                    }
+                }, 3000);
+            }
         };
         
         ws.onerror = (error) => {
-            console.error('Erro no WebSocket:', error);
+            console.error('❌ Erro no WebSocket:', error);
             updateConnectionStatus('Erro de conexão', 'error');
         };
         
     } catch (error) {
-        console.error('Erro ao conectar WebSocket:', error);
+        console.error('❌ Erro ao criar WebSocket:', error);
         updateConnectionStatus('Erro ao conectar', 'error');
     }
 }
@@ -176,12 +201,29 @@ function handleWebSocketMessage(data) {
 }
 
 // Funções de interface
-function handleLogin(e) {
+async function handleLogin(e) {
     e.preventDefault();
     
     const username = usernameInput.value.trim();
     if (!username) {
         showToast('Por favor, digite seu nome', 'error');
+        return;
+    }
+    
+    // Mostrar loading
+    const loginBtn = loginForm.querySelector('button');
+    const originalText = loginBtn.innerHTML;
+    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Conectando...';
+    loginBtn.disabled = true;
+    
+    console.log('🚀 Iniciando login para usuário:', username);
+    
+    // Testar conectividade com o servidor primeiro
+    const serverOk = await testServerConnection();
+    if (!serverOk) {
+        showToast('Servidor não está respondendo. Tente novamente.', 'error');
+        loginBtn.innerHTML = originalText;
+        loginBtn.disabled = false;
         return;
     }
     
@@ -194,9 +236,17 @@ function handleLogin(e) {
     // Conectar ao WebSocket
     connectWebSocket();
     
-    // Aguardar conexão antes de enviar dados do usuário
-    setTimeout(() => {
-        if (isConnected) {
+    // Aguardar conexão com timeout mais longo
+    let attempts = 0;
+    const maxAttempts = 10; // 5 segundos no total
+    
+    const checkConnection = () => {
+        attempts++;
+        console.log(`⏳ Verificando conexão... tentativa ${attempts}/${maxAttempts}`);
+        
+        if (isConnected && ws && ws.readyState === WebSocket.OPEN) {
+            console.log('✅ Conexão estabelecida, enviando dados do usuário...');
+            
             // Enviar dados do usuário
             sendWebSocketMessage({
                 type: 'user_connect',
@@ -205,10 +255,31 @@ function handleLogin(e) {
             
             // Trocar de tela
             showChatScreen();
+            
+            // Restaurar botão
+            loginBtn.innerHTML = originalText;
+            loginBtn.disabled = false;
+            
+        } else if (attempts >= maxAttempts) {
+            console.error('❌ Timeout na conexão WebSocket');
+            showToast('Erro ao conectar. Verifique sua conexão e tente novamente.', 'error');
+            
+            // Restaurar botão
+            loginBtn.innerHTML = originalText;
+            loginBtn.disabled = false;
+            
+            currentUser = null;
+            if (ws) {
+                ws.close();
+            }
         } else {
-            showToast('Erro ao conectar. Tente novamente.', 'error');
+            // Tentar novamente em 500ms
+            setTimeout(checkConnection, 500);
         }
-    }, 500);
+    };
+    
+    // Iniciar verificação
+    setTimeout(checkConnection, 500);
 }
 
 function showChatScreen() {
@@ -358,8 +429,24 @@ function handleMessageRead(readData) {
 function sendWebSocketMessage(data) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data));
+        console.log('📤 Mensagem enviada:', data.type);
     } else {
+        console.error('❌ WebSocket não está conectado. Estado:', ws?.readyState);
         showToast('Não conectado ao servidor', 'error');
+    }
+}
+
+// Função para testar conectividade com o servidor
+async function testServerConnection() {
+    try {
+        console.log('🔍 Testando conectividade com servidor...');
+        const response = await fetch('/status');
+        const data = await response.json();
+        console.log('✅ Servidor respondeu:', data);
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao testar servidor:', error);
+        return false;
     }
 }
 
