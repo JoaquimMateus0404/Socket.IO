@@ -767,12 +767,12 @@ app.get('/calls', (req, res) => {
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor WebSocket NotiChat rodando em http://localhost:${PORT}`);
-  console.log(`📱 Endpoint WebSocket: ws://localhost:${PORT}/ws`);
-  console.log(`📊 Status: http://localhost:${PORT}/status`);
-  console.log(`👥 Usuários: http://localhost:${PORT}/users`);
-  console.log(`� Chamadas: http://localhost:${PORT}/calls`);
-  console.log(`�🔧 Debug: http://localhost:${PORT}/debug`);
+  console.log(`🚀 Servidor WebSocket NotiChat rodando em https://socket-io-qhs6.onrender.com/:${PORT}`);
+  console.log(`📱 Endpoint WebSockethttps://socket-io-qhs6.onrender.com/:${PORT}/ws`);
+  console.log(`📊 Status: https://socket-io-qhs6.onrender.com/:${PORT}/status`);
+  console.log(`👥 Usuários: https://socket-io-qhs6.onrender.com/:${PORT}/users`);
+  console.log(`� Chamadas: https://socket-io-qhs6.onrender.com/:${PORT}/calls`);
+  console.log(`�🔧 Debug: https://socket-io-qhs6.onrender.com/:${PORT}/debug`);
 });
 
 // Graceful shutdown
