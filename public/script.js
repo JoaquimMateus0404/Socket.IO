@@ -70,11 +70,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Funções de conexão WebSocket
 function connectWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    try {
-        ws = new WebSocket(wsUrl);
+  // Detectar se estamos em produção ou desenvolvimento
+  const isProduction = window.location.hostname !== 'localhost';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  
+  let wsUrl;
+  if (isProduction) {
+    // Em produção (Render)
+    wsUrl = 'wss://socket-io-qhs6.onrender.com/ws';
+  } else {
+    // Em desenvolvimento local
+    wsUrl = `${protocol}//${window.location.host}/ws`;
+  }
+  
+  console.log('Conectando ao WebSocket:', wsUrl);
+  
+  try {
+    ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
             console.log('Conectado ao WebSocket');
