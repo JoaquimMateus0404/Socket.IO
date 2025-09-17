@@ -27,6 +27,8 @@ let userToClientMap = new Map();
 let clientToUserMap = new Map();
 // Map para controlar throttle de digitação
 let typingThrottle = new Map();
+// Map para controlar chamadas ativas
+let activeCalls = new Map();
 
 // Função para broadcast para todos os clientes
 function broadcast(data, excludeWs = null) {
@@ -112,6 +114,22 @@ wss.on('connection', (ws) => {
           
         case 'message_read':
           handleMessageRead(ws, message);
+          break;
+          
+        case 'call_initiate':
+          handleCallInitiate(ws, message);
+          break;
+          
+        case 'call_accept':
+          handleCallAccept(ws, message);
+          break;
+          
+        case 'call_reject':
+          handleCallReject(ws, message);
+          break;
+          
+        case 'call_end':
+          handleCallEnd(ws, message);
           break;
           
         default:
@@ -218,7 +236,9 @@ function handleChatMessage(ws, message) {
   const participants = message.participants || [];
   
   console.log(`Mensagem de ${user.username}: ${messageContent} na conversa ${conversationId}`);
-  console.log(`Participantes:`, participants);
+  if (participants.length > 0) {
+    console.log(`Participantes:`, participants);
+  }
   
   // Estrutura de resposta compatível com o frontend do NotiChat
   const responseData = {
@@ -395,6 +415,202 @@ function handleMessageRead(ws, message) {
   console.log(`${user.username} leu a mensagem ${messageData.messageId}`);
 }
 
+function handleCallInitiate(ws, message) {
+  const caller = connectedUsers.get(ws.clientId);
+  if (!caller) return;
+  
+  const { targetUserId, callType, conversationId } = message.data || message;
+  
+  if (!targetUserId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID do usuário de destino não fornecido'
+    });
+    return;
+  }
+  
+  // Gerar ID único para a chamada
+  const callId = uuidv4();
+  
+  // Armazenar informações da chamada
+  activeCalls.set(callId, {
+    callerId: caller.userId,
+    targetUserId: targetUserId,
+    callType: callType || 'voice',
+    conversationId: conversationId,
+    status: 'calling',
+    startTime: new Date()
+  });
+  
+  // Enviar notificação de chamada recebida para o usuário de destino
+  const callData = {
+    type: 'call_incoming',
+    data: {
+      callId: callId,
+      callerId: caller.userId,
+      callerName: caller.name || caller.username,
+      callerUsername: caller.username,
+      callType: callType || 'voice', // 'voice' ou 'video'
+      conversationId: conversationId,
+      timestamp: new Date().toISOString()
+    }
+  };
+  
+  sendToUser(targetUserId, callData);
+  
+  // Confirmar para quem iniciou a chamada
+  sendToClient(ws, {
+    type: 'call_initiated',
+    data: {
+      callId: callId,
+      targetUserId: targetUserId,
+      callType: callType || 'voice',
+      conversationId: conversationId,
+      status: 'calling'
+    }
+  });
+  
+  console.log(`${caller.username} iniciou chamada ${callType || 'voice'} para usuário ${targetUserId} (callId: ${callId})`);
+}
+
+function handleCallAccept(ws, message) {
+  const accepter = connectedUsers.get(ws.clientId);
+  if (!accepter) return;
+  
+  const { callId, callerId } = message.data || message;
+  
+  if (!callId || !callerId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada ou do chamador não fornecido'
+    });
+    return;
+  }
+  
+  // Atualizar status da chamada
+  const callInfo = activeCalls.get(callId);
+  if (callInfo) {
+    callInfo.status = 'active';
+    callInfo.acceptTime = new Date();
+  }
+  
+  // Notificar o chamador que a chamada foi aceita
+  sendToUser(callerId, {
+    type: 'call_accepted',
+    data: {
+      callId: callId,
+      accepterId: accepter.userId,
+      accepterName: accepter.name || accepter.username,
+      accepterUsername: accepter.username,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Confirmar para quem aceitou
+  sendToClient(ws, {
+    type: 'call_started',
+    data: {
+      callId: callId,
+      callerId: callerId,
+      status: 'active'
+    }
+  });
+  
+  console.log(`${accepter.username} aceitou a chamada ${callId} de ${callerId}`);
+}
+
+function handleCallReject(ws, message) {
+  const rejecter = connectedUsers.get(ws.clientId);
+  if (!rejecter) return;
+  
+  const { callId, callerId } = message.data || message;
+  
+  if (!callId || !callerId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada ou do chamador não fornecido'
+    });
+    return;
+  }
+  
+  // Remover da lista de chamadas ativas
+  activeCalls.delete(callId);
+  
+  // Notificar o chamador que a chamada foi rejeitada
+  sendToUser(callerId, {
+    type: 'call_rejected',
+    data: {
+      callId: callId,
+      rejecterId: rejecter.userId,
+      rejecterName: rejecter.name || rejecter.username,
+      rejecterUsername: rejecter.username,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // Confirmar para quem rejeitou
+  sendToClient(ws, {
+    type: 'call_ended',
+    data: {
+      callId: callId,
+      reason: 'rejected',
+      status: 'ended'
+    }
+  });
+  
+  console.log(`${rejecter.username} rejeitou a chamada ${callId} de ${callerId}`);
+}
+
+function handleCallEnd(ws, message) {
+  const ender = connectedUsers.get(ws.clientId);
+  if (!ender) return;
+  
+  const { callId, otherUserId } = message.data || message;
+  
+  if (!callId) {
+    sendToClient(ws, {
+      type: 'error',
+      message: 'ID da chamada não fornecido'
+    });
+    return;
+  }
+  
+  // Remover da lista de chamadas ativas
+  const callInfo = activeCalls.get(callId);
+  if (callInfo) {
+    callInfo.endTime = new Date();
+    console.log(`Chamada ${callId} durou ${Math.round((callInfo.endTime - (callInfo.acceptTime || callInfo.startTime)) / 1000)} segundos`);
+  }
+  activeCalls.delete(callId);
+  
+  // Se há outro usuário, notificar sobre o fim da chamada
+  if (otherUserId) {
+    sendToUser(otherUserId, {
+      type: 'call_ended',
+      data: {
+        callId: callId,
+        enderId: ender.userId,
+        enderName: ender.name || ender.username,
+        enderUsername: ender.username,
+        reason: 'ended_by_user',
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+  
+  // Confirmar para quem encerrou
+  sendToClient(ws, {
+    type: 'call_ended',
+    data: {
+      callId: callId,
+      reason: 'ended_by_self',
+      status: 'ended'
+    }
+  });
+  
+  console.log(`${ender.username} encerrou a chamada ${callId}`);
+}
+
 function handleDisconnection(ws) {
   const user = connectedUsers.get(ws.clientId);
   
@@ -402,6 +618,32 @@ function handleDisconnection(ws) {
     // Limpar throttle de digitação
     const keysToDelete = Array.from(typingThrottle.keys()).filter(key => key.startsWith(user.userId));
     keysToDelete.forEach(key => typingThrottle.delete(key));
+    
+    // Encerrar chamadas ativas do usuário
+    const userCalls = Array.from(activeCalls.entries()).filter(([callId, callInfo]) => 
+      callInfo.callerId === user.userId || callInfo.targetUserId === user.userId
+    );
+    
+    userCalls.forEach(([callId, callInfo]) => {
+      const otherUserId = callInfo.callerId === user.userId ? callInfo.targetUserId : callInfo.callerId;
+      
+      // Notificar o outro usuário sobre a desconexão
+      sendToUser(otherUserId, {
+        type: 'call_ended',
+        data: {
+          callId: callId,
+          enderId: user.userId,
+          enderName: user.name || user.username,
+          enderUsername: user.username,
+          reason: 'user_disconnected',
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      // Remover chamada da lista
+      activeCalls.delete(callId);
+      console.log(`Chamada ${callId} encerrada devido à desconexão de ${user.username}`);
+    });
     
     // Remover dos mapas
     if (user.userId) {
@@ -468,13 +710,57 @@ app.get('/debug', (req, res) => {
     userData: connectedUsers.get(client.clientId)
   }));
   
+  const calls = Array.from(activeCalls.entries()).map(([callId, callInfo]) => ({
+    callId,
+    ...callInfo,
+    duration: callInfo.acceptTime ? 
+      Math.round((new Date() - callInfo.acceptTime) / 1000) + 's' : 
+      Math.round((new Date() - callInfo.startTime) / 1000) + 's (not accepted)'
+  }));
+  
   res.json({
     totalConnections: wss.clients.size,
     totalUsers: connectedUsers.size,
+    activeCalls: activeCalls.size,
     userToClientMappings: Object.fromEntries(userToClientMap),
     clientToUserMappings: Object.fromEntries(clientToUserMap),
     connections: connections,
+    calls: calls,
     typingThrottleKeys: Array.from(typingThrottle.keys())
+  });
+});
+
+// Endpoint para listar chamadas ativas
+app.get('/calls', (req, res) => {
+  const calls = Array.from(activeCalls.entries()).map(([callId, callInfo]) => {
+    const callerUser = Array.from(connectedUsers.values()).find(user => user.userId === callInfo.callerId);
+    const targetUser = Array.from(connectedUsers.values()).find(user => user.userId === callInfo.targetUserId);
+    
+    return {
+      callId,
+      caller: {
+        userId: callInfo.callerId,
+        username: callerUser?.username,
+        name: callerUser?.name
+      },
+      target: {
+        userId: callInfo.targetUserId,
+        username: targetUser?.username,
+        name: targetUser?.name
+      },
+      callType: callInfo.callType,
+      status: callInfo.status,
+      conversationId: callInfo.conversationId,
+      startTime: callInfo.startTime,
+      acceptTime: callInfo.acceptTime,
+      duration: callInfo.acceptTime ? 
+        Math.round((new Date() - callInfo.acceptTime) / 1000) : null
+    };
+  });
+  
+  res.json({
+    totalActiveCalls: activeCalls.size,
+    calls: calls
   });
 });
 
@@ -485,7 +771,8 @@ server.listen(PORT, () => {
   console.log(`📱 Endpoint WebSocket: ws://localhost:${PORT}/ws`);
   console.log(`📊 Status: http://localhost:${PORT}/status`);
   console.log(`👥 Usuários: http://localhost:${PORT}/users`);
-  console.log(`🔧 Debug: http://localhost:${PORT}/debug`);
+  console.log(`� Chamadas: http://localhost:${PORT}/calls`);
+  console.log(`�🔧 Debug: http://localhost:${PORT}/debug`);
 });
 
 // Graceful shutdown
