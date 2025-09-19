@@ -97,19 +97,6 @@ wss.on('connection', (ws) => {
               type: 'already_connected',
               userData: ws.userData
             });
-            
-            // Reenviar lista de usuários online
-            const onlineUsers = Array.from(connectedUsers.values()).map(user => ({
-              userId: user.userId,
-              username: user.username,
-              name: user.name,
-              clientId: user.clientId
-            }));
-            
-            sendToClient(ws, {
-              type: 'users_online',
-              users: onlineUsers
-            });
             return;
           }
           handleUserConnect(ws, message);
@@ -176,11 +163,6 @@ wss.on('connection', (ws) => {
           handleWebRTCCallReject(ws, message);
           break;
           
-        case 'ping':
-          // Responder ao ping do cliente
-          sendToClient(ws, { type: 'pong' });
-          break;
-          
         default:
           console.log('Tipo de mensagem desconhecido:', message.type);
       }
@@ -221,7 +203,7 @@ const heartbeatInterval = setInterval(() => {
     ws.isAlive = false;
     ws.ping();
   });
-}, 45000); // Verificar a cada 45 segundos (mais tolerante)
+}, 30000); // Verificar a cada 30 segundos
 
 // Limpeza periódica de mapeamentos órfãos
 const cleanupInterval = setInterval(() => {
@@ -262,7 +244,7 @@ const cleanupInterval = setInterval(() => {
       users: onlineUsers
     });
   }
-}, 120000); // Limpeza a cada 2 minutos (menos agressiva)
+}, 60000); // Limpeza a cada 60 segundos
 
 // Handlers adaptados para o NotiChat
 function handleUserConnect(ws, message) {
