@@ -1,3 +1,10 @@
+// Funções utilitárias
+function generateUserId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 9);
+    return `user_${timestamp}_${random}`;
+}
+
 // Variáveis globais
 let ws = null;
 let currentUser = null;
@@ -26,6 +33,12 @@ const userDropdown = document.getElementById('userDropdown');
 const usersSidebar = document.getElementById('usersSidebar');
 const usersList = document.getElementById('usersList');
 const toast = document.getElementById('toast');
+const toggleSidebar = document.getElementById('toggleSidebar');
+const closeSidebar = document.getElementById('closeSidebar');
+const sendBtn = document.getElementById('sendBtn');
+const userInitials = document.getElementById('userInitials');
+const dropdownInitials = document.getElementById('dropdownInitials');
+const dropdownUsername = document.getElementById('dropdownUsername');
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', async () => {
@@ -72,8 +85,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     // User menu
     userMenuBtn.addEventListener('click', toggleUserDropdown);
     
+    // Sidebar controls
+    if (toggleSidebar) {
+        toggleSidebar.addEventListener('click', () => {
+            usersSidebar.classList.toggle('hidden');
+        });
+    }
+    
+    if (closeSidebar) {
+        closeSidebar.addEventListener('click', () => {
+            usersSidebar.classList.add('hidden');
+        });
+    }
+    
     // Dropdown items
-    document.getElementById('toggleUsers').addEventListener('click', toggleUsersSidebar);
+    document.getElementById('toggleUsers').addEventListener('click', () => {
+        usersSidebar.classList.toggle('hidden');
+        userDropdown.classList.add('hidden');
+        userDropdown.classList.remove('show');
+    });
     document.getElementById('toggleTheme').addEventListener('click', () => {
         if (window.toggleThemeEnhanced) {
             window.toggleThemeEnhanced();
@@ -84,6 +114,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         userDropdown.classList.remove('show');
     });
     document.getElementById('logoutBtn').addEventListener('click', logout);
+    
+    // Funcionalidades dos botões do header
+    document.getElementById('searchBtn').addEventListener('click', toggleSearch);
+    document.getElementById('notificationBtn').addEventListener('click', toggleNotifications);
+    document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+    
+    // Outros botões funcionais
+    document.getElementById('emojiBtn').addEventListener('click', toggleEmojiPicker);
+    document.getElementById('attachBtn').addEventListener('click', handleFileAttach);
+    document.getElementById('clearHistory').addEventListener('click', clearChatHistory);
+    document.getElementById('toggleNotifications').addEventListener('click', togglePushNotifications);
     
     // Novos event listeners para melhorias
     if (document.getElementById('clearHistory')) {
@@ -377,6 +418,12 @@ async function handleLogin(e) {
 function showChatScreen() {
     currentUsernameSpan.textContent = currentUser.username;
     
+    // Atualizar iniciais do usuário
+    const initials = currentUser.username.substring(0, 2).toUpperCase();
+    if (userInitials) userInitials.textContent = initials;
+    if (dropdownInitials) dropdownInitials.textContent = initials;
+    if (dropdownUsername) dropdownUsername.textContent = currentUser.username;
+    
     loginScreen.classList.add('hidden');
     chatScreen.classList.remove('hidden');
     chatScreen.classList.add('fade-in');
@@ -389,27 +436,41 @@ function handleSendMessage(e) {
     e.preventDefault();
     
     const message = messageInput.value.trim();
-    if (!message || !isConnected) return;
+    if (!message) return;
     
-    const messageData = {
-        type: 'chat_message',
-        conversationId: 'general',
-        data: {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showToast('Conexão perdida. Tentando reconectar...', 'warning');
+        connectWebSocket();
+        return;
+    }
+    
+    // Adicionar efeito visual no botão
+    const sendBtn = document.getElementById('sendBtn');
+    sendBtn.style.transform = 'scale(0.95)';
+    setTimeout(() => {
+        sendBtn.style.transform = '';
+    }, 150);
+    
+    // Enviar mensagem
+    try {
+        ws.send(JSON.stringify({
+            type: 'message',
             content: message,
-            _id: Date.now(),
-            createdAt: new Date().toISOString()
-        }
-    };
-    
-    sendWebSocketMessage(messageData);
-    messageInput.value = '';
-    
-    // Parar indicador de digitação
-    clearTimeout(typingTimeout);
-    sendWebSocketMessage({
-        type: 'typing_stop',
-        conversationId: 'general'
-    });
+            user: currentUser
+        }));
+        
+        messageInput.value = '';
+        messageInput.focus();
+        
+        // Scroll automático para baixo
+        setTimeout(() => {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }, 100);
+        
+    } catch (error) {
+        console.error('❌ Erro ao enviar mensagem:', error);
+        showToast('Erro ao enviar mensagem. Tente novamente.', 'error');
+    }
 }
 
 function handleTyping() {
@@ -605,11 +666,10 @@ function showToast(message, type = 'info') {
 }
 
 function toggleUserDropdown() {
-    userDropdown.classList.toggle('hidden');
-    if (!userDropdown.classList.contains('hidden')) {
-        userDropdown.classList.add('show');
-    } else {
+    if (userDropdown.classList.contains('show')) {
         userDropdown.classList.remove('show');
+    } else {
+        userDropdown.classList.add('show');
     }
 }
 
@@ -696,52 +756,411 @@ function logout() {
     showToast('Você saiu do chat', 'info');
 }
 
-// Função para gerar ID único do usuário
-function generateUserId() {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 9);
-    return `user_${timestamp}_${random}`;
-}
+// ===== FUNCIONALIDADES AVANÇADAS DOS BOTÕES =====
 
-// Função de teste para verificar se a sidebar funciona
-function testSidebar() {
-    console.log('🧪 Testando sidebar de usuários');
+// Busca de mensagens
+function toggleSearch() {
+    console.log('🔍 Ativando busca de mensagens...');
     
-    // Dados de teste
-    const testUsers = [
-        { userId: '1', username: 'usuario1', name: 'Usuário 1' },
-        { userId: '2', username: 'usuario2', name: 'Usuário 2' },
-        { userId: '3', username: 'teste', name: 'Usuário Teste' }
-    ];
-    
-    // Atualizar com dados de teste
-    updateOnlineUsers(testUsers);
-    
-    // Forçar exibição da sidebar
-    usersSidebar.classList.remove('hidden');
-    usersSidebar.classList.add('show');
-    
-    console.log('✅ Teste da sidebar executado');
-}
-
-// Adicionar tecla de atalho para teste (Ctrl+Shift+T)
-document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'T') {
-        testSidebar();
+    // Criar overlay de busca se não existir
+    let searchOverlay = document.getElementById('searchOverlay');
+    if (!searchOverlay) {
+        searchOverlay = document.createElement('div');
+        searchOverlay.id = 'searchOverlay';
+        searchOverlay.className = 'search-overlay';
+        searchOverlay.innerHTML = `
+            <div class="search-container">
+                <div class="search-header">
+                    <h3><i class="fas fa-search"></i> Buscar Mensagens</h3>
+                    <button class="close-search" onclick="closeSearch()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="search-input-container">
+                    <input type="text" id="searchInput" placeholder="Digite para buscar mensagens..." autocomplete="off">
+                    <button class="search-btn"><i class="fas fa-search"></i></button>
+                </div>
+                <div class="search-results" id="searchResults">
+                    <p class="search-placeholder">Digite algo para buscar nas mensagens...</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(searchOverlay);
+        
+        // Adicionar event listener para busca
+        document.getElementById('searchInput').addEventListener('input', performSearch);
     }
-});
-
-// Função para escapar HTML (segurança)
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    
+    searchOverlay.classList.add('show');
+    setTimeout(() => document.getElementById('searchInput').focus(), 300);
 }
 
-// Função para rolar para o final das mensagens
-function scrollToBottom() {
-    if (messagesDiv) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+function closeSearch() {
+    const searchOverlay = document.getElementById('searchOverlay');
+    if (searchOverlay) {
+        searchOverlay.classList.remove('show');
     }
 }
+
+function performSearch() {
+    const query = document.getElementById('searchInput').value.toLowerCase();
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (query.length < 2) {
+        resultsDiv.innerHTML = '<p class="search-placeholder">Digite pelo menos 2 caracteres...</p>';
+        return;
+    }
+    
+    // Buscar nas mensagens existentes
+    const messages = document.querySelectorAll('.message');
+    const results = [];
+    
+    messages.forEach((msg, index) => {
+        const content = msg.textContent.toLowerCase();
+        if (content.includes(query)) {
+            results.push({
+                element: msg,
+                index: index,
+                preview: content.substring(0, 100) + '...'
+            });
+        }
+    });
+    
+    if (results.length === 0) {
+        resultsDiv.innerHTML = '<p class="no-results">Nenhuma mensagem encontrada.</p>';
+    } else {
+        resultsDiv.innerHTML = results.map(result => `
+            <div class="search-result" onclick="scrollToMessage(${result.index})">
+                <div class="result-preview">${result.preview}</div>
+            </div>
+        `).join('');
+    }
+}
+
+function scrollToMessage(index) {
+    const messages = document.querySelectorAll('.message');
+    if (messages[index]) {
+        messages[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        messages[index].style.background = '#fff3cd';
+        setTimeout(() => {
+            messages[index].style.background = '';
+        }, 2000);
+    }
+    closeSearch();
+}
+
+// Notificações
+function toggleNotifications() {
+    console.log('🔔 Ativando central de notificações...');
+    showToast('Central de notificações ativada!', 'info');
+    
+    // Simular notificações
+    setTimeout(() => {
+        showToast('Nova mensagem de João!', 'info');
+    }, 2000);
+}
+
+// Tela cheia
+function toggleFullscreen() {
+    console.log('🖥️ Alternando modo tela cheia...');
+    
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+            const btn = document.getElementById('fullscreenBtn');
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
+            btn.title = 'Sair da tela cheia';
+            showToast('Modo tela cheia ativado', 'success');
+        }).catch(err => {
+            showToast('Erro ao ativar tela cheia', 'error');
+        });
+    } else {
+        document.exitFullscreen().then(() => {
+            const btn = document.getElementById('fullscreenBtn');
+            btn.innerHTML = '<i class="fas fa-expand"></i>';
+            btn.title = 'Tela cheia';
+            showToast('Tela cheia desativada', 'info');
+        });
+    }
+}
+
+// Emoji picker
+function toggleEmojiPicker() {
+    console.log('😀 Ativando seletor de emojis...');
+    
+    const emojis = ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳'];
+    
+    let emojiPicker = document.getElementById('emojiPicker');
+    if (!emojiPicker) {
+        emojiPicker = document.createElement('div');
+        emojiPicker.id = 'emojiPicker';
+        emojiPicker.className = 'emoji-picker';
+        emojiPicker.innerHTML = `
+            <div class="emoji-header">
+                <span>Escolha um emoji</span>
+                <button onclick="closeEmojiPicker()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="emoji-grid">
+                ${emojis.map(emoji => `<button class="emoji-btn" onclick="insertEmoji('${emoji}')">${emoji}</button>`).join('')}
+            </div>
+        `;
+        document.getElementById('emojiBtn').appendChild(emojiPicker);
+    }
+    
+    emojiPicker.classList.toggle('show');
+}
+
+function closeEmojiPicker() {
+    const picker = document.getElementById('emojiPicker');
+    if (picker) picker.classList.remove('show');
+}
+
+function insertEmoji(emoji) {
+    const input = document.getElementById('messageInput');
+    input.value += emoji;
+    input.focus();
+    closeEmojiPicker();
+}
+
+// Anexar arquivos
+function handleFileAttach() {
+    console.log('📎 Ativando anexo de arquivos...');
+    
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,text/*,.pdf,.doc,.docx';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('Arquivo muito grande! Máximo 5MB.', 'error');
+                return;
+            }
+            showToast(`Arquivo "${file.name}" selecionado (funcionalidade em desenvolvimento)`, 'info');
+        }
+    };
+    input.click();
+}
+
+// Limpar histórico do chat
+function clearChatHistory() {
+    console.log('🗑️ Limpando histórico do chat...');
+    
+    if (confirm('Tem certeza que deseja limpar todo o histórico do chat?')) {
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.innerHTML = `
+            <div class="welcome-section">
+                <div class="welcome-animation">
+                    <div class="welcome-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <div class="welcome-rings">
+                        <div class="ring"></div>
+                        <div class="ring"></div>
+                        <div class="ring"></div>
+                    </div>
+                </div>
+                <h3>Chat limpo!</h3>
+                <p>O histórico foi removido. Comece uma nova conversa.</p>
+            </div>
+        `;
+        showToast('Histórico do chat limpo!', 'success');
+        userDropdown.classList.remove('show');
+    }
+}
+
+// Notificações push
+function togglePushNotifications() {
+    console.log('🔔 Configurando notificações push...');
+    
+    if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+            showToast('Notificações já estão ativadas!', 'success');
+        } else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    showToast('Notificações ativadas com sucesso!', 'success');
+                    new Notification('NotiChat', {
+                        body: 'Notificações estão funcionando!',
+                        icon: '/favicon.ico'
+                    });
+                } else {
+                    showToast('Permissão para notificações negada', 'warning');
+                }
+            });
+        } else {
+            showToast('Notificações bloqueadas pelo navegador', 'error');
+        }
+    } else {
+        showToast('Seu navegador não suporta notificações', 'error');
+    }
+    
+    userDropdown.classList.remove('show');
+}
+
+// ===== ESTILOS DINÂMICOS PARA NOVAS FUNCIONALIDADES =====
+
+// Adicionar estilos CSS dinamicamente
+const dynamicStyles = document.createElement('style');
+dynamicStyles.textContent = `
+.search-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.search-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.search-container {
+    background: var(--bg-primary);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.search-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-secondary);
+}
+
+.search-input-container {
+    padding: 1.5rem;
+    display: flex;
+    gap: 1rem;
+}
+
+.search-input-container input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+}
+
+.search-results {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.search-result {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.search-result:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.emoji-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    width: 300px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+.emoji-picker.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.emoji-header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+}
+
+.emoji-grid {
+    padding: 1rem;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.5rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.emoji-grid .emoji-btn {
+    padding: 0.5rem;
+    border: none;
+    background: none;
+    font-size: 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.emoji-grid .emoji-btn:hover {
+    background: var(--bg-secondary);
+    transform: scale(1.2);
+}
+
+.notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #e53e3e;
+    color: white;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
+.close-search {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.close-search:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+`;
+document.head.appendChild(dynamicStyles);
