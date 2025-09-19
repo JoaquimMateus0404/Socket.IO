@@ -650,3 +650,31 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', () => {
     showToast('Conexão perdida. Verifique sua internet.', 'error');
 });
+
+// Função de teste para verificar se a sidebar funciona
+function testSidebar() {
+    console.log('🧪 Testando sidebar de usuários');
+    
+    // Dados de teste
+    const testUsers = [
+        { userId: '1', username: 'usuario1', name: 'Usuário 1' },
+        { userId: '2', username: 'usuario2', name: 'Usuário 2' },
+        { userId: '3', username: 'teste', name: 'Usuário Teste' }
+    ];
+    
+    // Atualizar com dados de teste
+    updateOnlineUsers(testUsers);
+    
+    // Forçar exibição da sidebar
+    usersSidebar.classList.remove('hidden');
+    usersSidebar.classList.add('show');
+    
+    console.log('✅ Teste da sidebar executado');
+}
+
+// Adicionar tecla de atalho para teste (Ctrl+Shift+T)
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+        testSidebar();
+    }
+});
