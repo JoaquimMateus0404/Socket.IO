@@ -131,6 +131,27 @@ wss.on('connection', (ws) => {
         case 'call_end':
           handleCallEnd(ws, message);
           break;
+
+        // Novos handlers para WebRTC
+        case 'call-offer':
+          handleCallOffer(ws, message);
+          break;
+          
+        case 'call-answer':
+          handleCallAnswer(ws, message);
+          break;
+          
+        case 'ice-candidate':
+          handleIceCandidate(ws, message);
+          break;
+          
+        case 'call-end':
+          handleWebRTCCallEnd(ws, message);
+          break;
+          
+        case 'call-reject':
+          handleWebRTCCallReject(ws, message);
+          break;
           
         default:
           console.log('Tipo de mensagem desconhecido:', message.type);
@@ -680,6 +701,82 @@ function handleDisconnection(ws) {
   } else {
     console.log(`Cliente desconectado: ${ws.clientId}`);
   }
+}
+
+// Handlers WebRTC para chamadas
+function handleCallOffer(ws, message) {
+  const caller = connectedUsers.get(ws.clientId);
+  if (!caller) return;
+  
+  const { offer, to, callType, from } = message;
+  
+  // Enviar oferta para o usuário de destino
+  sendToUser(to, {
+    type: 'call-offer',
+    offer,
+    callType,
+    from
+  });
+  
+  console.log(`WebRTC offer enviada de ${caller.username} para usuário ${to}`);
+}
+
+function handleCallAnswer(ws, message) {
+  const answerer = connectedUsers.get(ws.clientId);
+  if (!answerer) return;
+  
+  const { answer, to } = message;
+  
+  // Enviar resposta para quem iniciou a chamada
+  sendToUser(to, {
+    type: 'call-answer',
+    answer
+  });
+  
+  console.log(`WebRTC answer enviada de ${answerer.username} para usuário ${to}`);
+}
+
+function handleIceCandidate(ws, message) {
+  const user = connectedUsers.get(ws.clientId);
+  if (!user) return;
+  
+  const { candidate, to } = message;
+  
+  // Enviar candidate para o peer
+  sendToUser(to, {
+    type: 'ice-candidate',
+    candidate
+  });
+  
+  console.log(`ICE candidate enviado de ${user.username} para usuário ${to}`);
+}
+
+function handleWebRTCCallEnd(ws, message) {
+  const user = connectedUsers.get(ws.clientId);
+  if (!user) return;
+  
+  const { to } = message;
+  
+  // Notificar o outro usuário que a chamada foi encerrada
+  sendToUser(to, {
+    type: 'call-end'
+  });
+  
+  console.log(`Chamada WebRTC encerrada por ${user.username}`);
+}
+
+function handleWebRTCCallReject(ws, message) {
+  const user = connectedUsers.get(ws.clientId);
+  if (!user) return;
+  
+  const { to } = message;
+  
+  // Notificar quem iniciou a chamada que foi rejeitada
+  sendToUser(to, {
+    type: 'call-reject'
+  });
+  
+  console.log(`Chamada WebRTC rejeitada por ${user.username}`);
 }
 
 // Endpoint para verificar status do servidor
