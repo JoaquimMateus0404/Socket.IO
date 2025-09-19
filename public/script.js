@@ -34,6 +34,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('🌐 Hostname:', window.location.hostname);
     console.log('🔒 Protocol:', window.location.protocol);
     
+    // Inicializar melhorias se disponíveis
+    setTimeout(() => {
+        if (window.initializeEnhancements) {
+            console.log('🎨 Inicializando melhorias do chat...');
+            window.initializeEnhancements();
+        }
+    }, 100);
+    
     // Testar conectividade com o servidor
     try {
         const serverStatus = await testServerConnection();
@@ -66,8 +74,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Dropdown items
     document.getElementById('toggleUsers').addEventListener('click', toggleUsersSidebar);
-    document.getElementById('toggleTheme').addEventListener('click', toggleTheme);
+    document.getElementById('toggleTheme').addEventListener('click', () => {
+        if (window.toggleThemeEnhanced) {
+            window.toggleThemeEnhanced();
+        } else {
+            toggleTheme();
+        }
+        userDropdown.classList.add('hidden');
+        userDropdown.classList.remove('show');
+    });
     document.getElementById('logoutBtn').addEventListener('click', logout);
+    
+    // Novos event listeners para melhorias
+    if (document.getElementById('clearHistory')) {
+        document.getElementById('clearHistory').addEventListener('click', () => {
+            if (window.messageHistory) {
+                window.messageHistory.clear();
+                messagesDiv.innerHTML = `
+                    <div class="welcome-message">
+                        <div class="welcome-icon">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <h3>Bem-vindo ao NotiChat!</h3>
+                        <p>Comece uma conversa digitando uma mensagem abaixo.</p>
+                    </div>
+                `;
+                showToast('Histórico limpo com sucesso!', 'success');
+            }
+            userDropdown.classList.add('hidden');
+            userDropdown.classList.remove('show');
+        });
+    }
+    
+    if (document.getElementById('toggleNotifications')) {
+        document.getElementById('toggleNotifications').addEventListener('click', async () => {
+            if ('Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    showToast('Notificações ativadas!', 'success');
+                } else {
+                    showToast('Permissão para notificações negada', 'warning');
+                }
+            } else {
+                showToast('Notificações não suportadas neste navegador', 'error');
+            }
+            userDropdown.classList.add('hidden');
+            userDropdown.classList.remove('show');
+        });
+    }
     
     // Close sidebar
     document.getElementById('closeSidebar').addEventListener('click', () => {
@@ -378,6 +432,12 @@ function handleTyping() {
 }
 
 function addMessage(messageData) {
+    // Usar versão melhorada se disponível
+    if (window.addMessageToChatEnhanced) {
+        return window.addMessageToChatEnhanced(messageData, true);
+    }
+    
+    // Versão básica como fallback
     // Remover mensagem de boas-vindas se existir
     const welcomeMessage = messagesDiv.querySelector('.welcome-message');
     if (welcomeMessage) {
@@ -402,11 +462,19 @@ function addMessage(messageData) {
     `;
     
     messagesDiv.appendChild(messageElement);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    // Scroll automático usando função inteligente se disponível
+    if (window.scrollToBottomSmart) {
+        window.scrollToBottomSmart();
+    } else {
+        scrollToBottom();
+    }
     
     // Som de notificação (opcional)
     if (!isOwnMessage) {
-        playNotificationSound();
+        if (window.playNotificationSound) {
+            window.playNotificationSound();
+        }
     }
 }
 
@@ -628,70 +696,12 @@ function logout() {
     showToast('Você saiu do chat', 'info');
 }
 
+// Função para gerar ID único do usuário
 function generateUserId() {
-    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 9);
+    return `user_${timestamp}_${random}`;
 }
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function playNotificationSound() {
-    // Criar um som simples de notificação
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
-        
-        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-        
-        oscillator.start();
-        oscillator.stop(audioContext.currentTime + 0.1);
-    } catch (error) {
-        // Navegador pode não suportar Web Audio API
-        console.log('Som de notificação não disponível');
-    }
-}
-
-// Carregar tema salvo
-document.addEventListener('DOMContentLoaded', () => {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-        document.documentElement.setAttribute('data-theme', savedTheme);
-        
-        const themeBtn = document.getElementById('toggleTheme');
-        if (themeBtn) {
-            const icon = themeBtn.querySelector('i');
-            const text = themeBtn.querySelector('span');
-            
-            if (savedTheme === 'dark') {
-                icon.className = 'fas fa-sun';
-                text.textContent = 'Modo claro';
-            }
-        }
-    }
-});
-
-// Reconexão automática em caso de perda de conexão
-window.addEventListener('online', () => {
-    if (!isConnected && currentUser) {
-        showToast('Conexão restaurada. Reconectando...', 'info');
-        connectWebSocket();
-    }
-});
-
-window.addEventListener('offline', () => {
-    showToast('Conexão perdida. Verifique sua internet.', 'error');
-});
 
 // Função de teste para verificar se a sidebar funciona
 function testSidebar() {
@@ -720,3 +730,18 @@ document.addEventListener('keydown', (e) => {
         testSidebar();
     }
 });
+
+// Função para escapar HTML (segurança)
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Função para rolar para o final das mensagens
+function scrollToBottom() {
+    if (messagesDiv) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+}

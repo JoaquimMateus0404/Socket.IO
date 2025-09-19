@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NotiChat - Chat em Tempo Real</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="enhancements.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="theme-color" content="#6C5CE7">
+    <meta name="description" content="Chat em tempo real moderno e responsivo">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
 </head>
 <body>
     <!-- Partículas de fundo -->
@@ -53,8 +57,20 @@
                     <span>Usuários online</span>
                 </div>
                 <div class="feature">
+                    <i class="fas fa-bell"></i>
+                    <span>Notificações push</span>
+                </div>
+                <div class="feature">
                     <i class="fas fa-mobile-alt"></i>
                     <span>Interface responsiva</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-history"></i>
+                    <span>Histórico local</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-palette"></i>
+                    <span>Temas personalizáveis</span>
                 </div>
             </div>
         </div>
@@ -126,14 +142,14 @@
                 <div class="message-input-container">
                     <form id="messageForm" class="message-form">
                         <div class="input-wrapper">
-                            <button type="button" id="emojiBtn" class="emoji-btn">
+                            <button type="button" id="emojiBtn" class="emoji-btn" title="Emojis (Em breve)">
                                 <i class="fas fa-smile"></i>
                             </button>
-                            <input type="text" id="messageInput" placeholder="Digite sua mensagem..." autocomplete="off">
-                            <button type="button" id="attachBtn" class="attach-btn">
+                            <input type="text" id="messageInput" placeholder="Digite sua mensagem... (Ctrl+Enter para enviar)" autocomplete="off">
+                            <button type="button" id="attachBtn" class="attach-btn" title="Anexos (Em breve)">
                                 <i class="fas fa-paperclip"></i>
                             </button>
-                            <button type="submit" id="sendBtn" class="send-btn">
+                            <button type="submit" id="sendBtn" class="send-btn" title="Enviar mensagem">
                                 <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
@@ -156,10 +172,19 @@
         <div class="dropdown-item" id="toggleUsers">
             <i class="fas fa-users"></i>
             <span>Ver usuários online</span>
+            <kbd>Esc</kbd>
         </div>
         <div class="dropdown-item" id="toggleTheme">
             <i class="fas fa-moon"></i>
             <span>Modo escuro</span>
+        </div>
+        <div class="dropdown-item" id="clearHistory">
+            <i class="fas fa-trash"></i>
+            <span>Limpar histórico</span>
+        </div>
+        <div class="dropdown-item" id="toggleNotifications">
+            <i class="fas fa-bell"></i>
+            <span>Ativar notificações</span>
         </div>
         <div class="dropdown-item" id="logoutBtn">
             <i class="fas fa-sign-out-alt"></i>
@@ -168,5 +193,14 @@
     </div>
 
     <script src="script.js"></script>
+    <script src="enhancements.js"></script>
+    <script>
+        // Inicializar melhorias quando o DOM estiver pronto
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.initializeEnhancements) {
+                window.initializeEnhancements();
+            }
+        });
+    </script>
 </body>
 </html>
