@@ -4,6 +4,9 @@ let currentUser = null;
 let isConnected = false;
 let typingTimeout = null;
 let onlineUsers = [];
+let isReconnecting = false;
+let reconnectAttempts = 0;
+let maxReconnectAttempts = 5;
 
 // Elementos do DOM
 const loginScreen = document.getElementById('loginScreen');
@@ -89,6 +92,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Funções de conexão WebSocket
 function connectWebSocket() {
+    if (isReconnecting) {
+        console.log('⏳ Já tentando reconectar, ignorando tentativa adicional');
+        return;
+    }
+    
     // Detectar se estamos em produção ou desenvolvimento
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     
@@ -102,17 +110,25 @@ function connectWebSocket() {
         wsUrl = `wss://${window.location.host}/ws`;
     }
     
-    console.log('Tentando conectar ao WebSocket:', wsUrl);
-    console.log('Hostname:', window.location.hostname);
-    console.log('Protocol:', window.location.protocol);
-    console.log('Host:', window.location.host);
+    console.log('🔌 Tentando conectar ao WebSocket:', wsUrl);
+    console.log('🏠 Hostname:', window.location.hostname);
+    console.log('🔒 Protocol:', window.location.protocol);
+    console.log('🌐 Host:', window.location.host);
+    console.log('🔢 Tentativa:', reconnectAttempts + 1);
     
     try {
+        // Fechar conexão anterior se existir
+        if (ws) {
+            ws.close();
+        }
+        
         ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
             console.log('✅ Conectado ao WebSocket com sucesso');
             isConnected = true;
+            isReconnecting = false;
+            reconnectAttempts = 0;
             updateConnectionStatus('Conectado', 'success');
         };
         
@@ -121,32 +137,43 @@ function connectWebSocket() {
                 const data = JSON.parse(event.data);
                 handleWebSocketMessage(data);
             } catch (error) {
-                console.error('Erro ao processar mensagem:', error);
+                console.error('❌ Erro ao processar mensagem:', error);
             }
         };
         
         ws.onclose = (event) => {
-            console.log('❌ WebSocket desconectado:', event.code, event.reason);
+            console.log(`❌ WebSocket desconectado: code=${event.code}, reason="${event.reason}"`);
             isConnected = false;
             updateConnectionStatus('Desconectado', 'error');
             
-            // Não mostrar toast de reconexão se foi logout intencional
-            if (currentUser) {
-                showToast('Conexão perdida. Tentando reconectar...', 'error');
+            // Não tentar reconectar se foi logout intencional ou se atingiu o limite
+            if (currentUser && reconnectAttempts < maxReconnectAttempts && !isReconnecting) {
+                isReconnecting = true;
+                reconnectAttempts++;
                 
-                // Tentar reconectar após 3 segundos
+                showToast(`Conexão perdida. Tentando reconectar... (${reconnectAttempts}/${maxReconnectAttempts})`, 'error');
+                
+                // Exponential backoff: 3s, 6s, 12s, 24s, 48s
+                const delay = Math.min(3000 * Math.pow(2, reconnectAttempts - 1), 30000);
+                
                 setTimeout(() => {
                     if (!isConnected && currentUser) {
-                        console.log('🔄 Tentando reconectar...');
+                        console.log(`🔄 Tentativa de reconexão ${reconnectAttempts}/${maxReconnectAttempts} em ${delay}ms`);
                         connectWebSocket();
+                    } else {
+                        isReconnecting = false;
                     }
-                }, 3000);
+                }, delay);
+            } else if (reconnectAttempts >= maxReconnectAttempts) {
+                showToast('Não foi possível reconectar. Recarregue a página.', 'error');
+                isReconnecting = false;
             }
         };
         
         ws.onerror = (error) => {
             console.error('❌ Erro no WebSocket:', error);
             updateConnectionStatus('Erro de conexão', 'error');
+            isReconnecting = false;
         };
         
     } catch (error) {
@@ -195,6 +222,15 @@ function handleWebSocketMessage(data) {
             
         case 'error':
             showToast(data.message || 'Erro no servidor', 'error');
+            break;
+            
+        case 'already_connected':
+            console.log('ℹ️ Usuário já está conectado, ignorando tentativa de reconexão');
+            break;
+            
+        case 'session_replaced':
+            console.log('⚠️ Sessão foi substituída por uma nova conexão');
+            showToast('Sua sessão foi substituída por uma nova conexão', 'warning');
             break;
             
         default:
@@ -550,8 +586,14 @@ function toggleTheme() {
 }
 
 function logout() {
+    console.log('👋 Fazendo logout...');
+    
+    // Resetar variáveis de reconexão antes de fechar
+    isReconnecting = false;
+    reconnectAttempts = 0;
+    
     if (ws) {
-        ws.close();
+        ws.close(1000, 'User logout');
     }
     
     currentUser = null;

@@ -89,6 +89,16 @@ wss.on('connection', (ws) => {
       switch (message.type) {
         case 'user_connect':
         case 'user_join':
+          // Verificar se o usuário já está conectado neste WebSocket
+          if (ws.userData) {
+            console.log(`⚠️ Tentativa de reconexão duplicada ignorada para ${ws.userData.username} (${ws.clientId})`);
+            // Enviar confirmação de que já está conectado
+            sendToClient(ws, {
+              type: 'already_connected',
+              userData: ws.userData
+            });
+            return;
+          }
           handleUserConnect(ws, message);
           break;
           
@@ -165,14 +175,76 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    console.log(`🔌 Conexão fechada - clientId: ${ws.clientId}, code: ${code}, reason: ${reason}`);
     handleDisconnection(ws);
   });
 
   ws.on('error', (error) => {
-    console.error('Erro no WebSocket:', error);
+    console.error(`❌ Erro no WebSocket (${ws.clientId}):`, error);
+    handleDisconnection(ws);
+  });
+  
+  // Adicionar heartbeat para detectar conexões mortas
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
   });
 });
+
+// Sistema de heartbeat para detectar conexões mortas
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log(`💀 Conexão morta detectada: ${ws.clientId}`);
+      return ws.terminate();
+    }
+    
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // Verificar a cada 30 segundos
+
+// Limpeza periódica de mapeamentos órfãos
+const cleanupInterval = setInterval(() => {
+  const orphanedMappings = [];
+  
+  // Verificar se todos os userToClientMap têm conexões válidas
+  for (const [userId, clientId] of userToClientMap.entries()) {
+    const clientExists = Array.from(wss.clients).some(client => 
+      client.clientId === clientId && client.readyState === WebSocket.OPEN
+    );
+    
+    if (!clientExists) {
+      orphanedMappings.push({ userId, clientId });
+    }
+  }
+  
+  // Limpar mapeamentos órfãos
+  orphanedMappings.forEach(({ userId, clientId }) => {
+    console.log(`🧹 Limpando mapeamento órfão: ${userId} -> ${clientId}`);
+    userToClientMap.delete(userId);
+    clientToUserMap.delete(clientId);
+    connectedUsers.delete(clientId);
+  });
+  
+  if (orphanedMappings.length > 0) {
+    console.log(`✅ Limpeza concluída: ${orphanedMappings.length} mapeamentos órfãos removidos`);
+    
+    // Atualizar lista de usuários para todos após limpeza
+    const onlineUsers = Array.from(connectedUsers.values()).map(user => ({
+      userId: user.userId,
+      username: user.username,
+      name: user.name,
+      clientId: user.clientId
+    }));
+    
+    broadcast({
+      type: 'update_users',
+      users: onlineUsers
+    });
+  }
+}, 60000); // Limpeza a cada 60 segundos
 
 // Handlers adaptados para o NotiChat
 function handleUserConnect(ws, message) {
@@ -180,15 +252,34 @@ function handleUserConnect(ws, message) {
   const username = message.data?.username || message.username;
   const name = message.data?.name || message.name;
   
+  console.log(`🔄 Tentativa de conexão - userId: ${userId}, username: ${username}, clientId: ${ws.clientId}`);
+  
   // Verificar se o usuário já está conectado
   const existingClientId = userToClientMap.get(userId);
-  if (existingClientId) {
-    // Encontrar e desconectar a conexão anterior
+  if (existingClientId && existingClientId !== ws.clientId) {
+    // Encontrar a conexão anterior
     const existingWs = Array.from(wss.clients).find(client => client.clientId === existingClientId);
-    if (existingWs && existingWs !== ws) {
-      console.log(`Desconectando sessão anterior do usuário ${username} (${existingClientId})`);
-      existingWs.close();
+    if (existingWs && existingWs !== ws && existingWs.readyState === WebSocket.OPEN) {
+      console.log(`⚠️ Desconectando sessão anterior do usuário ${username} (${existingClientId})`);
+      
+      // Notificar a conexão anterior que será desconectada
+      sendToClient(existingWs, {
+        type: 'session_replaced',
+        message: 'Sua sessão foi substituída por uma nova conexão'
+      });
+      
+      // Fechar a conexão anterior
+      existingWs.close(1000, 'Session replaced');
+      
       // Limpar dados da sessão anterior
+      connectedUsers.delete(existingClientId);
+      userToClientMap.delete(userId);
+      clientToUserMap.delete(existingClientId);
+      
+      console.log(`✅ Sessão anterior limpa para ${username}`);
+    } else if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
+      // Conexão anterior já não existe, apenas limpar os mapas
+      console.log(`🧹 Limpando mapeamento órfão para ${username} (${existingClientId})`);
       connectedUsers.delete(existingClientId);
       userToClientMap.delete(userId);
       clientToUserMap.delete(existingClientId);
@@ -211,9 +302,11 @@ function handleUserConnect(ws, message) {
   if (userData.userId) {
     userToClientMap.set(userData.userId, ws.clientId);
     clientToUserMap.set(ws.clientId, userData.userId);
+    console.log(`🔗 Mapeamento criado: ${userData.userId} -> ${ws.clientId}`);
   }
   
-  console.log(`${userData.username || userData.name} (${userData.userId}) conectado como ${ws.clientId}`);
+  console.log(`✅ ${userData.username || userData.name} (${userData.userId}) conectado como ${ws.clientId}`);
+  console.log(`📊 Total de usuários conectados: ${connectedUsers.size}`);
   
   // Notificar outros usuários sobre o usuário online
   broadcast({
@@ -666,14 +759,24 @@ function handleDisconnection(ws) {
       console.log(`Chamada ${callId} encerrada devido à desconexão de ${user.username}`);
     });
     
-    // Remover dos mapas
+    // Remover dos mapas com verificação adicional
     if (user.userId) {
-      userToClientMap.delete(user.userId);
+      // Verificar se o mapeamento ainda aponta para este cliente
+      const currentClientId = userToClientMap.get(user.userId);
+      if (currentClientId === ws.clientId) {
+        userToClientMap.delete(user.userId);
+        console.log(`🗑️ Removendo mapeamento: ${user.userId} -> ${ws.clientId}`);
+      } else {
+        console.log(`⚠️ Mapeamento inconsistente para ${user.userId}: esperado ${ws.clientId}, atual ${currentClientId}`);
+      }
       clientToUserMap.delete(ws.clientId);
     }
     
     // Remover da lista de usuários conectados
     connectedUsers.delete(ws.clientId);
+    
+    console.log(`❌ ${user.username} (${user.userId}) desconectado (clientId: ${ws.clientId})`);
+    console.log(`📊 Total de usuários conectados: ${connectedUsers.size}`);
     
     // Notificar outros usuários
     broadcast({
