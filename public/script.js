@@ -68,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Close sidebar
     document.getElementById('closeSidebar').addEventListener('click', () => {
+        usersSidebar.classList.add('hidden');
         usersSidebar.classList.remove('show');
     });
     
@@ -77,6 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             userDropdown.classList.add('hidden');
         }
         if (!usersSidebar.contains(e.target) && !document.getElementById('toggleUsers').contains(e.target)) {
+            usersSidebar.classList.add('hidden');
             usersSidebar.classList.remove('show');
         }
     });
@@ -381,28 +383,49 @@ function handleUserOffline(userData) {
 }
 
 function updateOnlineUsers(users) {
+    console.log('👥 Atualizando lista de usuários online:', users);
     onlineUsers = users || [];
     onlineCount.textContent = onlineUsers.length;
+    
+    console.log(`📊 Total de usuários: ${onlineUsers.length}`);
     
     // Atualizar sidebar de usuários
     usersList.innerHTML = '';
     
-    onlineUsers.forEach(user => {
+    if (onlineUsers.length === 0) {
+        console.log('⚠️ Nenhum usuário online encontrado');
+        const emptyMessage = document.createElement('div');
+        emptyMessage.classList.add('empty-users-message');
+        emptyMessage.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-light);">
+                <i class="fas fa-user-slash" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                <p>Nenhum usuário online</p>
+            </div>
+        `;
+        usersList.appendChild(emptyMessage);
+        return;
+    }
+    
+    onlineUsers.forEach((user, index) => {
+        console.log(`👤 Adicionando usuário ${index + 1}:`, user);
         const userElement = document.createElement('div');
         userElement.classList.add('user-item');
         
         const isCurrentUser = user.username === currentUser?.username;
+        const displayName = user.name || user.username || 'Usuário';
         
         userElement.innerHTML = `
-            <div class="user-avatar">${(user.name || user.username || 'U').charAt(0).toUpperCase()}</div>
+            <div class="user-avatar">${displayName.charAt(0).toUpperCase()}</div>
             <div class="user-info">
-                <div class="user-name">${user.name || user.username}${isCurrentUser ? ' (Você)' : ''}</div>
+                <div class="user-name">${displayName}${isCurrentUser ? ' (Você)' : ''}</div>
                 <div class="user-status">Online</div>
             </div>
         `;
         
         usersList.appendChild(userElement);
     });
+    
+    console.log('✅ Lista de usuários atualizada com sucesso');
 }
 
 function handleUserTyping(data) {
@@ -487,7 +510,18 @@ function toggleUserDropdown() {
 }
 
 function toggleUsersSidebar() {
-    usersSidebar.classList.toggle('show');
+    console.log('🔄 Toggling users sidebar');
+    
+    if (usersSidebar.classList.contains('hidden')) {
+        usersSidebar.classList.remove('hidden');
+        usersSidebar.classList.add('show');
+        console.log('👥 Mostrando sidebar de usuários');
+    } else {
+        usersSidebar.classList.add('hidden');
+        usersSidebar.classList.remove('show');
+        console.log('🙈 Ocultando sidebar de usuários');
+    }
+    
     userDropdown.classList.add('hidden');
     userDropdown.classList.remove('show');
 }
@@ -545,6 +579,7 @@ function logout() {
     
     // Esconder dropdowns
     userDropdown.classList.add('hidden');
+    usersSidebar.classList.add('hidden');
     usersSidebar.classList.remove('show');
     
     usernameInput.focus();
